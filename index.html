@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset='utf-8'>
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <link href='https://fonts.googleapis.com/css?family=Architects+Daughter' rel='stylesheet' type='text/css'>
+    <link rel="stylesheet" type="text/css" href="stylesheets/stylesheet.css" media="screen">
+    <link rel="stylesheet" type="text/css" href="stylesheets/github-light.css" media="screen">
+    <link rel="stylesheet" type="text/css" href="stylesheets/print.css" media="print">
+
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+
+    <title>Path::Tiny::Inheritable by regina-verbae</title>
+  </head>
+
+  <body>
+    <header>
+      <div class="inner">
+        <h1>Path::Tiny::Inheritable</h1>
+        <h2>Drop-in replacement for Path::Tiny that allows inheritance</h2>
+        <a href="https://github.com/regina-verbae/Path-Tiny-Inheritable" class="button"><small>View project on</small> GitHub</a>
+      </div>
+    </header>
+
+    <div id="content-wrapper">
+      <div class="inner clearfix">
+        <section id="main-content">
+          <h1>
+<a id="pathtinyinheritable" class="anchor" href="#pathtinyinheritable" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Path::Tiny::Inheritable</h1>
+
+<p>Drop-in replacement for <code>Path::Tiny</code> that allows inheritance</p>
+
+<p>As such, it is less <em>tiny</em> than <code>Path::Tiny</code>, but does adhere
+to a more traditional object-oriented design.</p>
+
+<h2>
+<a id="features" class="anchor" href="#features" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Features</h2>
+
+<ul>
+<li>All <code>Path::Tiny</code> methods are available</li>
+<li>All constructors (except <code>path</code>) may be called with a bare class name or as a method from an existing object.</li>
+</ul>
+
+<div class="highlight highlight-source-perl"><pre>    <span class="pl-k">my</span> <span class="pl-smi">$path1</span> = Path::Tiny::Inheritable<span class="pl-k">-&gt;</span>new(...);
+    <span class="pl-k">my</span> <span class="pl-smi">$path2</span> = <span class="pl-smi">$path1</span><span class="pl-k">-&gt;</span>new(...);</pre></div>
+
+<ul>
+<li>
+<code>Path::Tiny</code> methods which return <code>Path::Tiny</code> objects have been overridden to return objects constructed using <code>$self-&gt;new()</code>, guaranteeing that they will be of the same class type as <code>$self</code>.</li>
+<li>Auto-stringification is enabled and inheritable.</li>
+</ul>
+
+<h2>
+<a id="simple-example-subclass" class="anchor" href="#simple-example-subclass" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Simple example subclass</h2>
+
+<div class="highlight highlight-source-perl"><pre><span class="pl-k">package</span> <span class="pl-en">My::Path::Tiny</span>;
+
+<span class="pl-k">use</span> parent <span class="pl-s"><span class="pl-pds">qw(</span>Path::Tiny::Inheritable Exporter<span class="pl-pds">)</span></span>;
+<span class="pl-k">our</span> <span class="pl-smi">@EXPORT</span> = <span class="pl-s"><span class="pl-pds">qw(</span>path<span class="pl-pds">)</span></span>;
+
+<span class="pl-c"># Subroutine constructor must be redefined to replicate</span>
+<span class="pl-c">#   Path::Tiny behavior</span>
+<span class="pl-k">sub</span> <span class="pl-en">path</span> {
+    <span class="pl-c1">__PACKAGE__</span><span class="pl-k">-&gt;</span>new(<span class="pl-smi">@_</span>);
+}
+
+<span class="pl-c"># Override or define new methods and go!</span></pre></div>
+
+<h2>
+<a id="methods" class="anchor" href="#methods" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Methods</h2>
+
+<p>See <code>Path::Tiny</code> documentation for available methods.</p>
+
+<p>The only new method available in <code>Path::Tiny::Inheritable</code> is <code>path_tiny</code>, which returns the <code>Path::Tiny</code> object stored in <code>$self</code>.</p>
+
+<h2>
+<a id="details-of-inheritance" class="anchor" href="#details-of-inheritance" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Details of inheritance</h2>
+
+<p>Subclasses of <code>Path::Tiny::Inheritable</code> inherit the following <code>CLASSNAME-&gt;new()</code>-style constructors:</p>
+
+<ul>
+<li><code>CLASSNAME-&gt;new()</code></li>
+<li><code>CLASSNAME-&gt;cwd()</code></li>
+<li><code>CLASSNAME-&gt;rootdir()</code></li>
+<li><code>CLASSNAME-&gt;tempfile()</code></li>
+<li><code>CLASSNAME-&gt;tempdir()</code></li>
+</ul>
+
+<p>There is no <code>CLASSNAME-&gt;path()</code> interface for the classic <code>path</code> constructor.  The <code>path</code> constructor is not inheritable, but if it is desired by the subclass, it can be defined simply as follows:</p>
+
+<div class="highlight highlight-source-perl"><pre><span class="pl-k">sub</span> <span class="pl-en">path</span> {
+    <span class="pl-c1">__PACKAGE__</span><span class="pl-k">-&gt;</span>new(<span class="pl-smi">@_</span>);
+}</pre></div>
+
+<p>If subroutine-style constructors are desired for the remaining constructors (as in <code>Path::Tiny</code>), the following is the recommended way to do so (in order to preserve inheritance for child classes):</p>
+
+<div class="highlight highlight-source-perl"><pre><span class="pl-k">sub</span> <span class="pl-en">cwd</span> {
+    <span class="pl-k">my</span> <span class="pl-smi">$class</span> = <span class="pl-c1">shift</span> // <span class="pl-c1">__PACKAGE__</span>;
+    <span class="pl-smi">$class</span><span class="pl-k">-&gt;</span>SUPER::cwd;
+}
+
+<span class="pl-k">sub</span> <span class="pl-en">rootdir</span> {
+    <span class="pl-k">my</span> <span class="pl-smi">$class</span> = <span class="pl-c1">shift</span> // <span class="pl-c1">__PACKAGE__</span>;
+    <span class="pl-smi">$class</span><span class="pl-k">-&gt;</span>SUPER::rootdir;
+}
+
+<span class="pl-c"># tempfile,tempdir may accept arguments so it is necessary to test whether</span>
+<span class="pl-c">#   the first argument looks like a classname or calling object</span>
+<span class="pl-k">sub</span> <span class="pl-en">tempfile</span> {
+    <span class="pl-k">my</span> <span class="pl-smi">$class</span> = <span class="pl-k">eval</span> { <span class="pl-smi">$_</span>[0]<span class="pl-k">-&gt;</span>isa(<span class="pl-c1">__PACKAGE__</span>) }
+        ? <span class="pl-c1">shift</span>
+        : <span class="pl-c1">__PACKAGE__</span>;
+    <span class="pl-smi">$class</span><span class="pl-k">-&gt;</span>SUPER::tempfile;
+}
+
+<span class="pl-k">sub</span> <span class="pl-en">tempdir</span> {
+    <span class="pl-k">my</span> <span class="pl-smi">$class</span> = <span class="pl-k">eval</span> { <span class="pl-smi">$_</span>[0]<span class="pl-k">-&gt;</span>isa(<span class="pl-c1">__PACKAGE__</span>) }
+        ? <span class="pl-c1">shift</span>
+        : <span class="pl-c1">__PACKAGE__</span>;
+    <span class="pl-smi">$class</span><span class="pl-k">-&gt;</span>SUPER::tempdir;
+}</pre></div>
+
+<h2>
+<a id="best-practices-for-addingoverriding-methods" class="anchor" href="#best-practices-for-addingoverriding-methods" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Best practices for adding/overriding methods</h2>
+
+<h3>
+<a id="use-self-new-instead-of-path" class="anchor" href="#use-self-new-instead-of-path" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Use <code>$self-&gt;new()</code> instead of <code>path()</code>
+</h3>
+
+<p>If the subclass overrides or defines a method which returns a path object, in order to preserve inheritance,
+use the <code>$self-&gt;new()</code> style of construction instead of <code>__PACKAGE__-&gt;new()</code> or <code>path()</code>.</p>
+
+<h3>
+<a id="overriding-new" class="anchor" href="#overriding-new" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Overriding <code>new()</code>
+</h3>
+
+<p>This package relies heavily on the fact that <code>$self-&gt;new(...)</code> constructs a new object of the same type as <code>$self</code>.  Overriding <code>new()</code> is certainly allowed, but must implement that same behavior, otherwise things will almost certainly break.</p>
+
+<p>The structure of the <code>Path::Tiny::Inheritable</code> object is simply this:</p>
+
+<div class="highlight highlight-source-perl"><pre>{ <span class="pl-c1">path</span> <span class="pl-k">=&gt;</span> &lt;Path::Tiny object&gt; }</pre></div>
+
+<p>If an overridden <code>new</code> constructor changes where the <code>Path::Tiny</code> object is stored, the <code>path_tiny</code> method must also be overridden in order for inherited methods to work.</p>
+
+<h2>
+<a id="acknowledgments" class="anchor" href="#acknowledgments" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Acknowledgments</h2>
+
+<p>This package would obviously not exist without the mighty work of David Golden in <a href="https://github.com/dagolden/Path-Tiny">Path::Tiny</a>.</p>
+        </section>
+
+        <aside id="sidebar">
+          <a href="https://github.com/regina-verbae/Path-Tiny-Inheritable/zipball/master" class="button">
+            <small>Download</small>
+            .zip file
+          </a>
+          <a href="https://github.com/regina-verbae/Path-Tiny-Inheritable/tarball/master" class="button">
+            <small>Download</small>
+            .tar.gz file
+          </a>
+
+          <p class="repo-owner"><a href="https://github.com/regina-verbae/Path-Tiny-Inheritable"></a> is maintained by <a href="https://github.com/regina-verbae">regina-verbae</a>.</p>
+
+          <p>This page was generated by <a href="https://pages.github.com">GitHub Pages</a> using the Architect theme by <a href="https://twitter.com/jasonlong">Jason Long</a>.</p>
+        </aside>
+      </div>
+    </div>
+
+  
+  </body>
+</html>
