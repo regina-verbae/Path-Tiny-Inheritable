@@ -10,11 +10,11 @@ use strict;
 use warnings;
 
 # Coordinate with Path::Tiny version
-our $VERSION = '0.076.001';
+our $VERSION = '0.082.001';
 our @ISA;
 BEGIN {
     require Path::Tiny;
-    Path::Tiny->VERSION('0.076');
+    Path::Tiny->VERSION('0.082');
     push @ISA, 'Path::Tiny';
 }
 
@@ -47,8 +47,7 @@ sub FREEZE { return $_[0]->stringify }
 sub THAW   { return $_[0]->new($_[2]) }
 { no warnings 'once'; *TO_JSON = *FREEZE; }
 
-# Annoying copy of Path::Tiny code
-# Required because Path::Tiny is so unfriendly to subclassing
+# Sadly need to copy some Path::Tiny code
 my $HAS_UU;
 sub _check_UU {
     unless (defined $HAS_UU) {
@@ -202,6 +201,68 @@ sub copy {
     );
 }
 
+# edit_raw
+#   Manual redefinition because Path::Tiny uses goto &edit
+
+sub edit_raw {
+    my ($self, $cb) = @_;
+    $self->edit($cb, { binmode => ":unix" });
+}
+
+# edit_lines
+#   Manual redefinition because Path::Tiny uses the path() constructor,
+#   disallowing any overloaded methods
+
+sub edit_lines {
+    my $self = shift;
+    my $cb = shift;
+    my $args = Path::Tiny::_get_args( shift, qw/binmode/ );
+    Carp::croak("Callback for edit_lines() must be a code reference")
+        unless defined ($cb) && ref($cb) eq 'CODE';
+
+    my $binmode = $args->{binmode};
+    # get default binmode from caller's lexical scope (see "perldoc open")
+    $binmode = ( ( caller(0) )[10] || {} )->{'open>'} unless defined $binmode;
+
+    # need to follow the link and create the tempfile in the same
+    # dir for later atomic rename
+    my $resolved_path = $self->stringify;
+    $resolved_path = readlink $resolved_path while -l $resolved_path;
+    my $temp = $self->new( $resolved_path . $$ . int( rand( 2**32 ) ) );
+
+    my $temp_fh = $temp->filehandle(
+        { exclusive => 1, locked => 1 }, '>', $binmode
+    );
+    my $in_fh = $self->filehandle( { locked => 1 }, '<', $binmode );
+
+    local $_;
+    while (<$in_fh>) {
+        $cb->();
+        $temp_fh->print($_);
+    }
+
+    close $temp_fh or $self->_throw('close', $temp);
+    close $in_fh or $self->_throw('close');
+
+    return $temp->move($resolved_path);
+}
+
+# edit_lines_raw
+#   Manual redefinition because Path::Tiny uses goto &edit_lines
+
+sub edit_lines_raw {
+    my ($self, $cb) = @_;
+    $self->edit_lines($cb, { binmode => ':unix' });
+}
+
+# edit_lines_utf8
+#   Manual redefinition because Path::Tiny uses goto &edit_lines
+
+sub edit_lines_utf8 {
+    my ($self, $cb) = @_;
+    $self->edit_lines($cb, { binmode => ':raw:encoding(UTF-8)' });
+}
+
 # iterator
 #   Had to redefine because it needs a constructor wrapper
 #   and checks ref $self eq Path::Tiny
@@ -306,13 +367,99 @@ sub realpath {
 }
 
 # relative
-#   Constructor wrapper
+#   Manual redefinition because internally uses the path()
+#   constructor, disallowing potentially overloaded methods
 
 sub relative {
-    my $self = shift;
-    return $self->new(
-        $self->SUPER::relative(@_)
-    );
+    my ($self, $base) = @_;
+    $base = $self->new( defined $base && length $base ? $base : '.' );
+
+    # relative paths must be converted to absolute first
+    $self = $self->absolute if $self->is_relative;
+    $base = $base->absolute if $base->is_relative;
+
+    # normalize volumes if they exist
+    $self = $self->absolute if ! length $self->volume && length $base->volume;
+    $base = $base->absolute if length $self->volume && ! length $base->volume;
+
+    # can't make paths relative across volumes
+    if (! Path::Tiny::_same( $self->volume, $base->volume ) ) {
+        Carp::croak("relative() can't cross volumes: '$self' vs '$base'");
+    }
+
+    # if same absolute path, relative is current directory
+    return $self->new(".") if Path::Tiny::_same("$self", "$base");
+
+    # if base is a prefix of self, chop prefix off self
+    if ($base->subsumes($self)) {
+        $base = "" if $base->is_rootdir;
+        my $relative = "$self";
+        $relative =~ s{\A$base/}{};
+        return $self->new($relative);
+    }
+
+    # base is not a prefix, so must find a common prefix (even if root)
+    my (@common, @self_parts, @base_parts);
+    @base_parts = split /\//, $base->_just_filepath;
+
+    # if self is rootdir, then common directory is root (shown as empty
+    # string for later joins); otherwise, must be computed from path parts.
+    if ($self->is_rootdir) {
+        @common = ("");
+        shift @base_parts;
+    }
+    else {
+        @self_parts = split /\//, $self->_just_filepath;
+
+        while (
+            @self_parts
+                && @base_parts
+                && Path::Tiny::_same( $self_parts[0], $base_parts[0] )
+        ) {
+            push @common, shift @base_parts;
+            shift @self_parts;
+        }
+    }
+
+    # if there are any symlinks from common to base, we have a problem,
+    # as you can't guarantee that updir from base reaches the common prefix;
+    # we must resolve symlinks and try again; likewise, any updirs are a
+    # problem as it throws off calculation of updirs needed to get from
+    # self's path to the common prefix.
+    if ( my $new_base = $self->_resolve_between( \@common, \@base_parts ) ) {
+        return $self->relative($new_base);
+    }
+
+    # otherwise, symlinks in common or from common to A don't matter as
+    # those don't involve updirs
+    my @new_path = ( ("..") x ( 0+ @base_parts ), @self_parts );
+    return $self->new(@new_path);
+}
+
+# relative utility method _resolve_between
+#   Manual redefinition because internally uses the path()
+#   constructor, disallowing potentially overloaded methods
+sub _resolve_between {
+    my ($self, $common, $base) = @_;
+    my $path = $self->volume . join("/", @$common);
+    my $changed = 0;
+    for my $p (@$base) {
+        $path .= "/$p";
+        if ($p eq '..') {
+            $changed = 1;
+            if (-e $path ) {
+                $path = $self->new($path)->realpath->stringify;
+            }
+            else {
+                $path =~ s{/[^/]+/..$}{/};
+            }
+        }
+        if (-l $path) {
+            $changed = 1;
+            $path = $self->new($path)->realpath->stringify;
+        }
+    }
+    return $changed ? $self->new($path) : undef;
 }
 
 # sibling
